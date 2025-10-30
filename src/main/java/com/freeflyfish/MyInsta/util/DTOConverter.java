@@ -1,5 +1,6 @@
 package com.freeflyfish.MyInsta.util;
 
+import com.freeflyfish.MyInsta.dto.CommentDTO;
 import com.freeflyfish.MyInsta.dto.MediaFileDTO;
 import com.freeflyfish.MyInsta.dto.PostDTO;
 import com.freeflyfish.MyInsta.entity.MediaFile;
@@ -90,6 +91,46 @@ public class DTOConverter {
     public List<PostDTO> convertToPostDTOList(List<Post> posts) {
         return posts.stream()
                 .map(this::convertToPostDTO)
+                .collect(Collectors.toList());
+    }
+
+    // Добавляем эти методы в существующий класс DTOConverter:
+
+    /**
+     * Преобразует Comment entity в CommentDTO.
+     *
+     * @param comment entity объект комментария
+     * @return DTO объект комментария
+     */
+    public CommentDTO convertToCommentDTO(com.freeflyfish.MyInsta.entity.Comment comment) {
+        CommentDTO dto = new CommentDTO();
+        dto.setId(comment.getId());
+        dto.setMessage(comment.getMessage());
+        dto.setCreatedDate(comment.getCreatedDate());
+
+        // Добавляем информацию об авторе
+        if (comment.getUser() != null) {
+            dto.setAuthorUsername(comment.getUser().getUsername());
+            dto.setAuthorId(comment.getUser().getId());
+        }
+
+        // Добавляем информацию о посте
+        if (comment.getPost() != null) {
+            dto.setPostId(comment.getPost().getId());
+        }
+
+        return dto;
+    }
+
+    /**
+     * Преобразует список Comment entities в список CommentDTO.
+     *
+     * @param comments список entity комментариев
+     * @return список DTO комментариев
+     */
+    public List<CommentDTO> convertToCommentDTOList(List<com.freeflyfish.MyInsta.entity.Comment> comments) {
+        return comments.stream()
+                .map(this::convertToCommentDTO)
                 .collect(Collectors.toList());
     }
 }

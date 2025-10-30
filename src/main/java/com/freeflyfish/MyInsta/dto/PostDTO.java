@@ -1,145 +1,100 @@
 package com.freeflyfish.MyInsta.dto;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
- * DTO для передачи данных о посте между клиентом и сервером.
- * Используется вместо Entity класса Post чтобы:
- * 1. Не раскрывать внутреннюю структуру базы данных
- * 2. Контролировать какие данные отправляются клиенту
- * 3. Избежать циклических ссылок при сериализации JSON
+ * Обновленный DTO для поста с поддержкой множественных медиафайлов.
  */
 public class PostDTO {
-    private Long id; // Уникальный идентификатор поста
-    private String title; // Заголовок поста
-    private String caption; // Описание/подпись к посту
-    private String imageUrl; // URL для доступа к изображению
-    private LocalDateTime createdDate; // Дата создания поста
-    private String authorUsername; // Имя автора поста (только для чтения)
-    private Long authorId; // ID автора поста
+    private Long id;
+    private String title;
+    private String caption;
+    private LocalDateTime createdDate;
+    private String authorUsername;
+    private Long authorId;
 
-    // Конструктор по умолчанию (обязателен для Spring)
+    // Заменяем одиночное изображение на список медиафайлов
+    private List<MediaFileDTO> mediaFiles = new ArrayList<>();
+
+    // Конструкторы
     public PostDTO() {
     }
 
-    // Конструктор для удобного создания DTO
-    public PostDTO(Long id, String title, String caption, String imageUrl,
-                   LocalDateTime createdDate, String authorUsername, Long authorId) {
+    public PostDTO(Long id, String title, String caption, LocalDateTime createdDate,
+                   String authorUsername, Long authorId, List<MediaFileDTO> mediaFiles) {
         this.id = id;
         this.title = title;
         this.caption = caption;
-        this.imageUrl = imageUrl;
         this.createdDate = createdDate;
         this.authorUsername = authorUsername;
         this.authorId = authorId;
+        this.mediaFiles = mediaFiles;
     }
 
-    // ==================== ГЕТТЕРЫ ====================
+    // ==================== ГЕТТЕРЫ И СЕТТЕРЫ ====================
 
-    /**
-     * @return уникальный идентификатор поста в базе данных
-     */
     public Long getId() {
         return id;
     }
 
-    /**
-     * @return заголовок поста (может быть null)
-     */
-    public String getTitle() {
-        return title;
-    }
-
-    /**
-     * @return подробное описание или подпись к посту
-     */
-    public String getCaption() {
-        return caption;
-    }
-
-    /**
-     * @return относительный путь к файлу изображения на сервере
-     */
-    public String getImageUrl() {
-        return imageUrl;
-    }
-
-    /**
-     * @return дата и время создания поста (устанавливается автоматически)
-     */
-    public LocalDateTime getCreatedDate() {
-        return createdDate;
-    }
-
-    /**
-     * @return имя пользователя автора поста (только для чтения)
-     */
-    public String getAuthorUsername() {
-        return authorUsername;
-    }
-
-    /**
-     * @return идентификатор автора поста
-     */
-    public Long getAuthorId() {
-        return authorId;
-    }
-
-    // ==================== СЕТТЕРЫ ====================
-
-    /**
-     * Устанавливает идентификатор поста
-     * @param id новый идентификатор
-     */
     public void setId(Long id) {
         this.id = id;
     }
 
-    /**
-     * Устанавливает заголовок поста
-     * @param title новый заголовок
-     */
+    public String getTitle() {
+        return title;
+    }
+
     public void setTitle(String title) {
         this.title = title;
     }
 
-    /**
-     * Устанавливает описание поста
-     * @param caption новое описание
-     */
+    public String getCaption() {
+        return caption;
+    }
+
     public void setCaption(String caption) {
         this.caption = caption;
     }
 
-    /**
-     * Устанавливает путь к изображению
-     * @param imageUrl новый путь к изображению
-     */
-    public void setImageUrl(String imageUrl) {
-        this.imageUrl = imageUrl;
+    public LocalDateTime getCreatedDate() {
+        return createdDate;
     }
 
-    /**
-     * Устанавливает дату создания
-     * @param createdDate новая дата создания
-     */
     public void setCreatedDate(LocalDateTime createdDate) {
         this.createdDate = createdDate;
     }
 
-    /**
-     * Устанавливает имя автора
-     * @param authorUsername новое имя автора
-     */
+    public String getAuthorUsername() {
+        return authorUsername;
+    }
+
     public void setAuthorUsername(String authorUsername) {
         this.authorUsername = authorUsername;
     }
 
-    /**
-     * Устанавливает идентификатор автора
-     * @param authorId новый идентификатор автора
-     */
+    public Long getAuthorId() {
+        return authorId;
+    }
+
     public void setAuthorId(Long authorId) {
         this.authorId = authorId;
+    }
+
+    /**
+     * @return список медиафайлов поста (фото и видео)
+     */
+    public List<MediaFileDTO> getMediaFiles() {
+        return mediaFiles;
+    }
+
+    /**
+     * Устанавливает список медиафайлов
+     * @param mediaFiles новый список медиафайлов
+     */
+    public void setMediaFiles(List<MediaFileDTO> mediaFiles) {
+        this.mediaFiles = mediaFiles;
     }
 }

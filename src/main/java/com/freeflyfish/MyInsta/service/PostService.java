@@ -4,6 +4,7 @@ import com.freeflyfish.MyInsta.entity.MediaFile;
 import com.freeflyfish.MyInsta.entity.MediaType;
 import com.freeflyfish.MyInsta.entity.Post;
 import com.freeflyfish.MyInsta.entity.User;
+import com.freeflyfish.MyInsta.repository.MediaFileRepository;
 import com.freeflyfish.MyInsta.repository.PostRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -17,6 +18,7 @@ public class PostService {
 
     private final PostRepository postRepository;
     private final MediaFileService mediaFileService;
+    private final MediaFileRepository mediaFileRepository;
 
     // Максимальное количество медиафайлов в одном посте
     private static final int MAX_MEDIA_FILES_PER_POST = 20;
@@ -25,9 +27,10 @@ public class PostService {
      * Конструктор для внедрения зависимостей.
      * PostService теперь зависит от MediaFileService для работы с медиафайлами.
      */
-    public PostService(PostRepository postRepository, MediaFileService mediaFileService) {
+    public PostService(PostRepository postRepository, MediaFileService mediaFileService, MediaFileRepository mediaFileRepository) {
         this.postRepository = postRepository;
         this.mediaFileService = mediaFileService;
+        this.mediaFileRepository=mediaFileRepository;
     }
 
     /**
@@ -52,20 +55,20 @@ public class PostService {
             throw new RuntimeException("Пост должен содержать хотя бы один медиафайл");
         }
 
-        // Проверяем что первый файл не null и имеет имя (Spring иногда передает пустые файлы)
-        if (mediaFiles[0] == null || mediaFiles[0].isEmpty()) {
-            throw new RuntimeException("Первый медиафайл не может быть пустым");
-        }
-
-        // Создаем новый пост
+        // Сначала создаем и сохраняем пост
         Post post = new Post();
         post.setTitle(title);
         post.setCaption(caption);
         post.setUser(user);
 
-        // Обрабатываем и добавляем каждый медиафайл
-        for (MultipartFile mediaFile : mediaFiles) {
-            // Пропускаем пустые файлы (Spring может передавать null в массиве)
+        Post savedPost = postRepository.save(post);  // Сохраняем пост чтобы получить ID
+        System.out.println("Пост сохранен с ID: " + savedPost.getId());
+
+        // Затем обрабатываем и добавляем каждый медиафайл
+        for (int i = 0; i < mediaFiles.length; i++) {
+            MultipartFile mediaFile = mediaFiles[i];
+
+            // Пропускаем пустые файлы
             if (mediaFile == null || mediaFile.isEmpty()) {
                 continue;
             }
@@ -76,17 +79,19 @@ public class PostService {
             // Сохраняем медиафайл на диск и получаем объект MediaFile
             MediaFile savedMediaFile = mediaFileService.saveMediaFile(mediaFile, mediaType);
 
-            // Добавляем медиафайл к посту (внутри метода addMediaFile проверяется ограничение в 20 файлов)
-            post.addMediaFile(savedMediaFile);
+            // ВАЖНО: Устанавливаем связь с постом
+            savedMediaFile.setPost(savedPost);  // Используем сохраненный пост с ID
+            savedMediaFile.setPosition(i);
+
+            // Сохраняем MediaFile в БД
+            MediaFile finalMediaFile = mediaFileRepository.save(savedMediaFile);
+            System.out.println("MediaFile сохранен с ID: " + finalMediaFile.getId());
+
+            // Добавляем в коллекцию поста
+            savedPost.getMediaFiles().add(finalMediaFile);
         }
 
-        // Проверяем что после обработки остался хотя бы один валидный файл
-        if (post.getMediaFiles().isEmpty()) {
-            throw new RuntimeException("Не удалось загрузить ни одного валидного медиафайла");
-        }
-
-        // Сохраняем пост в базу данных (каскадно сохраняются и медиафайлы)
-        return postRepository.save(post);
+        return savedPost;
     }
 
     /**

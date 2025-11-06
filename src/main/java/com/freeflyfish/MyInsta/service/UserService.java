@@ -52,6 +52,19 @@ public class UserService {
      * Получение пользователя по ID
      */
     public Optional<User> findById(Long id) {
-        return userRepository.findById(id);
+        System.out.println("=== UserService.findById вызван ===");
+        System.out.println("Ищем пользователя с ID: " + id);
+
+        Optional<User> result = userRepository.findById(id);
+        System.out.println("Результат поиска: " + (result.isPresent() ? "НАЙДЕН" : "НЕ НАЙДЕН"));
+
+        if (result.isPresent()) {
+            System.out.println("Найден пользователь: " + result.get().getUsername());
+        } else {
+            System.out.println("Пользователь с ID " + id + " не найден в базе данных");
+        }
+
+        return result;
     }
+
 }

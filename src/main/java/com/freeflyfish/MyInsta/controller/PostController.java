@@ -1,9 +1,14 @@
 package com.freeflyfish.MyInsta.controller;
 
-import com.freeflyfish.MyInsta.dto.CreatePostRequest;
 import com.freeflyfish.MyInsta.dto.PostDTO;
+import com.freeflyfish.MyInsta.dto.TestPostRequest;
+import com.freeflyfish.MyInsta.entity.MediaFile;
+import com.freeflyfish.MyInsta.entity.MediaType;
 import com.freeflyfish.MyInsta.entity.Post;
 import com.freeflyfish.MyInsta.entity.User;
+import com.freeflyfish.MyInsta.repository.MediaFileRepository;
+import com.freeflyfish.MyInsta.repository.PostRepository;
+import com.freeflyfish.MyInsta.service.MediaFileService;
 import com.freeflyfish.MyInsta.service.PostService;
 import com.freeflyfish.MyInsta.service.UserService;
 import com.freeflyfish.MyInsta.util.DTOConverter;
@@ -13,9 +18,14 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/posts")
@@ -24,33 +34,89 @@ public class PostController {
     private final PostService postService;
     private final UserService userService;
     private final DTOConverter dtoConverter;
+    private final PostRepository postRepository;
+    private final MediaFileService mediaFileService;
+    private final MediaFileRepository mediaFileRepository;
 
-    /**
-     * Конструктор для внедрения зависимостей.
-     */
-    public PostController(PostService postService, UserService userService, DTOConverter dtoConverter) {
+    public PostController(PostService postService, UserService userService,
+                          DTOConverter dtoConverter, PostRepository postRepository,
+                          MediaFileService mediaFileService, MediaFileRepository mediaFileRepository) {
         this.postService = postService;
         this.userService = userService;
         this.dtoConverter = dtoConverter;
+        this.postRepository = postRepository;
+        this.mediaFileService = mediaFileService;
+        this.mediaFileRepository = mediaFileRepository;
+
+        System.out.println("=== PostController создан ===");
+        System.out.println("userService: " + (userService != null ? "NOT NULL" : "NULL"));
+        System.out.println("postService: " + (postService != null ? "NOT NULL" : "NULL"));
+        System.out.println("dtoConverter: " + (dtoConverter != null ? "NOT NULL" : "NULL"));
+        System.out.println("postRepository: " + (postRepository != null ? "NOT NULL" : "NULL"));
+        System.out.println("mediaFileService: " + (mediaFileService != null ? "NOT NULL" : "NULL"));
+        System.out.println("mediaFileRepository: " + (mediaFileRepository != null ? "NOT NULL" : "NULL"));
+    }
+
+    /**
+     * Простейший эндпоинт для проверки что контроллер работает
+     */
+    @GetMapping("/test")
+    public ResponseEntity<?> testEndpoint() {
+        Map<String, String> response = new HashMap<>();
+        response.put("message", "PostController работает!");
+        response.put("timestamp", LocalDateTime.now().toString());
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Эндпоинт для тестирования создания поста БЕЗ файлов
+     */
+    @PostMapping("/test")
+    public ResponseEntity<?> createTestPost(@RequestBody TestPostRequest request) {
+        try {
+            System.out.println("=== СОЗДАНИЕ ТЕСТОВОГО ПОСТА ===");
+            System.out.println("Title: " + request.getTitle());
+            System.out.println("Caption: " + request.getCaption());
+            System.out.println("AuthorId: " + request.getAuthorId());
+
+            // ШАГ 1: Поиск пользователя
+            System.out.println("ШАГ 1: Поиск пользователя...");
+            User author = userService.findById(request.getAuthorId())
+                    .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
+            System.out.println("✓ Пользователь найден: " + author.getUsername());
+
+            // ШАГ 2: Создание объекта Post
+            System.out.println("ШАГ 2: Создание объекта Post...");
+            Post post = new Post();
+            post.setTitle(request.getTitle());
+            post.setCaption(request.getCaption());
+            post.setUser(author);
+            System.out.println("✓ Объект Post создан");
+
+            // ШАГ 3: Сохранение в БД
+            System.out.println("ШАГ 3: Сохранение Post в БД...");
+            Post savedPost = postRepository.save(post);
+            System.out.println("✓ Post сохранен с ID: " + savedPost.getId());
+
+            // Успешный ответ
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", "Пост успешно создан!");
+            response.put("postId", savedPost.getId());
+
+            return ResponseEntity.status(HttpStatus.CREATED).body(response);
+
+        } catch (Exception e) {
+            System.out.println("❌ ОШИБКА В createTestPost: " + e.getMessage());
+            e.printStackTrace();
+
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+        }
     }
 
     /**
      * Эндпоинт для создания нового поста с медиафайлами.
-     * Использует multipart/form-data для загрузки файлов.
-     *
-     * URL: POST /api/posts
-     * Формат данных: multipart/form-data
-     * Параметры:
-     * - title: заголовок поста (текст)
-     * - caption: описание поста (текст)
-     * - mediaFiles: массив файлов (фото/видео)
-     * - authorId: ID автора поста
-     *
-     * @param title заголовок поста
-     * @param caption описание поста
-     * @param mediaFiles массив медиафайлов
-     * @param authorId ID автора поста
-     * @return ResponseEntity с созданным постом или ошибкой
      */
     @PostMapping(consumes = "multipart/form-data")
     public ResponseEntity<?> createPost(
@@ -60,17 +126,12 @@ public class PostController {
             @RequestParam("authorId") Long authorId) {
 
         try {
-            // Находим пользователя по ID
             User author = userService.findById(authorId)
                     .orElseThrow(() -> new RuntimeException("Пользователь с ID " + authorId + " не найден"));
 
-            // Создаем пост через сервис
             Post post = postService.createPost(author, title, caption, mediaFiles);
-
-            // Преобразуем Entity в DTO для ответа
             PostDTO postDTO = dtoConverter.convertToPostDTO(post);
 
-            // Возвращаем успешный ответ
             Map<String, Object> response = new HashMap<>();
             response.put("message", "Пост успешно создан");
             response.put("post", postDTO);
@@ -78,13 +139,10 @@ public class PostController {
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
 
         } catch (RuntimeException e) {
-            // Обрабатываем бизнес-ошибки (валидация, ограничения и т.д.)
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
-
         } catch (IOException e) {
-            // Обрабатываем ошибки ввода-вывода (проблемы с файлами)
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "Ошибка при сохранении медиафайлов: " + e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
@@ -92,51 +150,29 @@ public class PostController {
     }
 
     /**
-     * Эндпоинт для получения всех постов (лента).
-     * Доступен без аутентификации для просмотра.
-     *
-     * URL: GET /api/posts
-     *
-     * @return список всех постов в формате DTO
+     * Получение всех постов для ленты.
      */
     @GetMapping
     public ResponseEntity<List<PostDTO>> getAllPosts() {
         try {
-            // Получаем все посты через сервис
             List<Post> posts = postService.getAllPosts();
-
-            // Преобразуем Entity в DTO
             List<PostDTO> postDTOs = dtoConverter.convertToPostDTOList(posts);
-
             return ResponseEntity.ok(postDTOs);
-
         } catch (Exception e) {
-            // В случае ошибки возвращаем пустой список
             return ResponseEntity.ok(List.of());
         }
     }
 
     /**
-     * Эндпоинт для получения поста по ID.
-     *
-     * URL: GET /api/posts/{id}
-     *
-     * @param id идентификатор поста
-     * @return пост в формате DTO или 404 если не найден
+     * Получение поста по ID.
      */
     @GetMapping("/{id}")
     public ResponseEntity<?> getPostById(@PathVariable Long id) {
         try {
-            // Находим пост по ID
             Post post = postService.getPostById(id);
-
-            // Преобразуем Entity в DTO
             PostDTO postDTO = dtoConverter.convertToPostDTO(post);
-
             return ResponseEntity.ok(postDTO);
-
         } catch (RuntimeException e) {
-            // Если пост не найден
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
@@ -144,28 +180,17 @@ public class PostController {
     }
 
     /**
-     * Эндпоинт для получения постов конкретного пользователя.
-     *
-     * URL: GET /api/posts/user/{userId}
-     *
-     * @param userId идентификатор пользователя
-     * @return список постов пользователя
+     * Получение постов конкретного пользователя.
      */
     @GetMapping("/user/{userId}")
     public ResponseEntity<?> getPostsByUser(@PathVariable Long userId) {
         try {
-            // Находим пользователя
             User user = userService.findById(userId)
                     .orElseThrow(() -> new RuntimeException("Пользователь с ID " + userId + " не найден"));
 
-            // Получаем посты пользователя
             List<Post> posts = postService.getPostsByUser(user);
-
-            // Преобразуем в DTO
             List<PostDTO> postDTOs = dtoConverter.convertToPostDTOList(posts);
-
             return ResponseEntity.ok(postDTOs);
-
         } catch (RuntimeException e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());
@@ -174,28 +199,248 @@ public class PostController {
     }
 
     /**
-     * Эндпоинт для удаления поста.
-     *
-     * URL: DELETE /api/posts/{id}
-     *
-     * @param id идентификатор поста для удаления
-     * @return результат операции
+     * Удаление поста.
      */
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deletePost(@PathVariable Long id) {
         try {
-            // Удаляем пост через сервис
             postService.deletePost(id);
-
             Map<String, String> response = new HashMap<>();
             response.put("message", "Пост успешно удален");
-
             return ResponseEntity.ok(response);
-
         } catch (RuntimeException e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
         }
+    }
+
+    /**
+     * Самый простой эндпоинт для диагностики - без параметров
+     */
+    @PostMapping("/simple")
+    public ResponseEntity<?> simpleTest() {
+        System.out.println("=== ПРОСТЕЙШИЙ POST ВЫЗВАН ===");
+        System.out.println("Этот метод должен работать всегда!");
+
+        Map<String, String> response = new HashMap<>();
+        response.put("message", "Простейший POST работает");
+        response.put("status", "success");
+
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Эндпоинт с простым телом как String
+     */
+    @PostMapping("/simple-body")
+    public ResponseEntity<?> simpleBodyTest(@RequestBody String rawBody) {
+        System.out.println("=== POST С ТЕЛОМ ВЫЗВАН ===");
+        System.out.println("Полученное тело: " + rawBody);
+        System.out.println("Длина тела: " + rawBody.length());
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", "POST с телом работает");
+        response.put("body", rawBody);
+        response.put("bodyLength", rawBody.length());
+
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Эндпоинт с DTO но без бизнес-логики
+     */
+    @PostMapping("/test-dto")
+    public ResponseEntity<?> testDto(@RequestBody TestPostRequest request) {
+        System.out.println("=== TEST DTO ВЫЗВАН ===");
+        System.out.println("Title: " + request.getTitle());
+        System.out.println("Caption: " + request.getCaption());
+        System.out.println("AuthorId: " + request.getAuthorId());
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", "DTO получен успешно");
+        response.put("title", request.getTitle());
+        response.put("caption", request.getCaption());
+        response.put("authorId", request.getAuthorId());
+
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Упрощенный эндпоинт для тестирования загрузки файла (без сохранения в БД)
+     */
+    @PostMapping(value = "/test-simple-file", consumes = "multipart/form-data")
+    public ResponseEntity<?> testSimpleFile(
+            @RequestParam("title") String title,
+            @RequestParam("caption") String caption,
+            @RequestParam("authorId") Long authorId,
+            @RequestParam("mediaFile") MultipartFile mediaFile) {
+
+        try {
+            System.out.println("=== ТЕСТ ЗАГРУЗКИ ФАЙЛА ===");
+            System.out.println("Title: " + title);
+            System.out.println("Caption: " + caption);
+            System.out.println("AuthorId: " + authorId);
+            System.out.println("File: " + mediaFile.getOriginalFilename() + " (" + mediaFile.getSize() + " bytes)");
+
+            // Просто сохраняем файл на диск БЕЗ сохранения в БД
+            MediaType mediaType = mediaFileService.determineMediaType(mediaFile.getOriginalFilename());
+            String filePath = saveFileToDisk(mediaFile, mediaType);
+
+            System.out.println("Файл сохранен на диск: " + filePath);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", "Файл загружен успешно!");
+            response.put("filePath", filePath);
+            response.put("mediaType", mediaType.toString());
+            response.put("savedToDisk", true);
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            System.out.println("ОШИБКА: " + e.getMessage());
+            e.printStackTrace();
+
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+        }
+    }
+
+    /**
+     * Рабочий эндпоинт для создания поста с файлом (исправленная версия)
+     */
+    @PostMapping(value = "/create-with-file", consumes = "multipart/form-data")
+    public ResponseEntity<?> createPostWithFile(
+            @RequestParam("title") String title,
+            @RequestParam("caption") String caption,
+            @RequestParam("authorId") Long authorId,
+            @RequestParam("mediaFile") MultipartFile mediaFile) {
+
+        try {
+            System.out.println("=== СОЗДАНИЕ ПОСТА С ФАЙЛОМ (ИСПРАВЛЕННАЯ ВЕРСИЯ) ===");
+            System.out.println("Title: " + title);
+            System.out.println("Caption: " + caption);
+            System.out.println("AuthorId: " + authorId);
+            System.out.println("File: " + mediaFile.getOriginalFilename());
+
+            // Находим пользователя
+            User author = userService.findById(authorId)
+                    .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
+
+            // 1. Создаем и сохраняем пост
+            Post post = new Post();
+            post.setTitle(title);
+            post.setCaption(caption);
+            post.setUser(author);
+
+            Post savedPost = postRepository.save(post);
+            System.out.println("✓ Пост сохранен с ID: " + savedPost.getId());
+
+            // 2. Сохраняем файл на диск
+            MediaType mediaType = mediaFileService.determineMediaType(mediaFile.getOriginalFilename());
+            String filePath = saveFileToDisk(mediaFile, mediaType);
+            System.out.println("✓ Файл сохранен на диск: " + filePath);
+
+            // 3. Создаем MediaFile и устанавливаем связь с постом
+            MediaFile mediaFileEntity = new MediaFile();
+            mediaFileEntity.setFilePath(filePath);
+            mediaFileEntity.setMediaType(mediaType);
+            mediaFileEntity.setPost(savedPost);  // ВАЖНО: устанавливаем связь
+            mediaFileEntity.setPosition(0);
+
+            MediaFile savedMediaFile = mediaFileRepository.save(mediaFileEntity);
+            System.out.println("✓ MediaFile сохранен с ID: " + savedMediaFile.getId());
+
+            // 4. Обновляем пост с медиафайлом
+            savedPost.getMediaFiles().add(savedMediaFile);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", "Пост с файлом создан успешно!");
+            response.put("postId", savedPost.getId());
+            response.put("mediaFileId", savedMediaFile.getId());
+
+            return ResponseEntity.status(HttpStatus.CREATED).body(response);
+
+        } catch (Exception e) {
+            System.out.println("ОШИБКА: " + e.getMessage());
+            e.printStackTrace();
+
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+        }
+    }
+
+    /**
+     * Простейший тест создания поста с файлом
+     */
+    @PostMapping("/create-simple-file")
+    public ResponseEntity<?> createSimpleFile(@RequestParam("file") MultipartFile file) {
+        try {
+            System.out.println("=== ПРОСТЕЙШИЙ СОЗДАНИЕ С ФАЙЛОМ ===");
+            System.out.println("File: " + file.getOriginalFilename());
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", "Простейший метод с файлом работает!");
+            response.put("fileName", file.getOriginalFilename());
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            System.out.println("ОШИБКА: " + e.getMessage());
+
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+        }
+    }
+
+    /**
+     * Создание тестового пользователя
+     */
+    @PostMapping("/create-test-user")
+    public ResponseEntity<?> createTestUser() {
+        try {
+            System.out.println("=== СОЗДАНИЕ ТЕСТОВОГО ПОЛЬЗОВАТЕЛЯ ===");
+
+            User testUser = userService.createUser("testuser", "password123");
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", "Тестовый пользователь создан");
+            response.put("userId", testUser.getId());
+            response.put("username", testUser.getUsername());
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            System.out.println("ОШИБКА: " + e.getMessage());
+
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+        }
+    }
+
+    /**
+     * Вспомогательный метод для сохранения файла на диск
+     */
+    private String saveFileToDisk(MultipartFile file, MediaType mediaType) throws IOException {
+        String originalFileName = file.getOriginalFilename();
+        String fileExtension = originalFileName.substring(originalFileName.lastIndexOf("."));
+        String uniqueFileName = UUID.randomUUID().toString() + fileExtension;
+
+        String subfolder = mediaType == MediaType.PHOTO ? "photos/" : "videos/";
+        String fullUploadPath = "uploads/" + subfolder;
+
+        Path uploadPath = Paths.get(fullUploadPath);
+        if (!Files.exists(uploadPath)) {
+            Files.createDirectories(uploadPath);
+        }
+
+        Path filePath = uploadPath.resolve(uniqueFileName);
+        Files.copy(file.getInputStream(), filePath);
+
+        return fullUploadPath + uniqueFileName;
     }
 }
